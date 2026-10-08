@@ -1,245 +1,343 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import PropertyDetails from "./pages/PropertyDetails";
+import {
+  Link,
+  NavLink,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+} from "react-router-dom";
+
+import { getSession, login, logout } from "./services/auth";
 import api from "./services/api";
+
+import BrowseRooms from "./pages/BrowseRooms";
+import Register from "./pages/Register";
+import OwnerDashboard from "./components/OwnerDashboard";
+import TenantDashboard from "./components/TenantDashboard";
+import AdminDashboard from "./components/AdminDashboard";
+
 import "./App.css";
 
-const emptyFilters = {
-  locality: "",
-  maxRent: "",
-  roomType: "",
-};
+function SignIn({ onSignedIn, expired }) {
+  const location = useLocation();
 
-const currency = new Intl.NumberFormat("en-IN", {
-  style: "currency",
-  currency: "INR",
-  maximumFractionDigits: 0,
-});
-
-export default function App() {
-  const [filters, setFilters] = useState(emptyFilters);
-  const [properties, setProperties] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const activeRequest = useRef(null);
 
-  async function loadProperties(selectedFilters) {
-    activeRequest.current?.abort();
+  async function handleSubmit(event) {
+    event.preventDefault();
 
-    const controller = new AbortController();
-    activeRequest.current = controller;
+    if (busy) return;
 
-    setLoading(true);
+    setBusy(true);
     setError("");
 
-    const params = {};
-
-    for (const [key, value] of Object.entries(selectedFilters)) {
-      if (value.trim() !== "") {
-        params[key] = value.trim();
-      }
-    }
-
     try {
-      const response = await api.get("/properties/search", {
-        params,
-        signal: controller.signal,
-      });
-
-      if (!Array.isArray(response.data)) {
-        throw new Error("Unexpected API response");
-      }
-
-      if (!controller.signal.aborted) {
-        setProperties(response.data);
-      }
+      const newSession = await login(email, password);
+      onSignedIn(newSession);
     } catch (requestError) {
-      if (controller.signal.aborted) return;
+      const status = requestError.response?.status;
 
-      setProperties([]);
-
-      if (requestError.response?.status === 400) {
-        setError("Please check your search filters and try again.");
+      if (status === 401) {
+        setError("The email or password is incorrect.");
+      } else if (status === 400) {
+        setError("Check your email and password.");
       } else {
-        setError(
-          "Could not load properties. Check that the backend is running on port 8081."
-        );
+        setError("We couldn’t sign you in. Please try again.");
       }
     } finally {
-      if (!controller.signal.aborted) {
-        setLoading(false);
-      }
+      setBusy(false);
     }
-  }
-
-  useEffect(() => {
-    loadProperties(emptyFilters);
-
-    return () => activeRequest.current?.abort();
-  }, []);
-
-  function updateFilter(event) {
-    const { name, value } = event.target;
-
-    setFilters((previous) => ({
-      ...previous,
-      [name]: value,
-    }));
-  }
-
-  function handleSearch(event) {
-    event.preventDefault();
-    loadProperties(filters);
-  }
-
-  function handleReset() {
-    setFilters({ ...emptyFilters });
-    loadProperties(emptyFilters);
   }
 
   return (
-    <div className="app">
-      <header className="site-header">
-        <a className="brand" href="/">
-          Smart<span>Rent</span>
-        </a>
-        <span className="header-note">Find your next room</span>
-      </header>
+    <section className="auth-layout">
+      <div className="auth-story">
+        <p className="eyebrow">WELCOME TO SMARTRENT</p>
 
-      <main className="page">
-        <section className="page-heading">
-          <p className="eyebrow">ROOMS FOR STUDENTS & PROFESSIONALS</p>
-          <h1>A place that fits your life.</h1>
-          <p>Explore verified rooms by location, budget, and room type.</p>
-        </section>
+        <h1>
+          A simpler way
+          <br />
+          to find your place.
+        </h1>
 
-        <form className="search-panel" onSubmit={handleSearch}>
-          <div className="field">
-            <label htmlFor="locality">Locality</label>
+        <p>
+          Keep your saved rooms, rental requests, and updates together.
+        </p>
+
+        <Link to="/">← Back to available rooms</Link>
+      </div>
+
+      <div className="auth-card">
+        <p className="eyebrow">YOUR ACCOUNT</p>
+        <h2>Welcome back</h2>
+        <p>Sign in with your registered email address.</p>
+
+        {location.state?.registered && (
+          <p className="success-message" role="status">
+            Your account is ready. Sign in to get started.
+          </p>
+        )}
+
+        {expired && (
+          <p role="status">
+            Your session ended. Please sign in again.
+          </p>
+        )}
+
+        <form onSubmit={handleSubmit} className="stack-form">
+          <label htmlFor="signin-email">
+            Email address
             <input
-              id="locality"
-              name="locality"
-              value={filters.locality}
-              onChange={updateFilter}
-              placeholder="e.g. Uppal"
-              maxLength={100}
+              id="signin-email"
+              type="email"
+              autoComplete="username"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              maxLength={150}
+              required
+              disabled={busy}
             />
-          </div>
+          </label>
 
-          <div className="field">
-            <label htmlFor="maxRent">Maximum monthly rent</label>
+          <label htmlFor="signin-password">
+            Password
             <input
-              id="maxRent"
-              name="maxRent"
-              type="number"
-              min="0"
-              step="0.01"
-              value={filters.maxRent}
-              onChange={updateFilter}
-              placeholder="e.g. 8000"
+              id="signin-password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+              disabled={busy}
             />
-          </div>
+          </label>
 
-          <div className="field">
-            <label htmlFor="roomType">Room type</label>
-            <select
-              id="roomType"
-              name="roomType"
-              value={filters.roomType}
-              onChange={updateFilter}
-            >
-              <option value="">All room types</option>
-              <option value="SINGLE">Single</option>
-              <option value="SHARED">Shared</option>
-            </select>
-          </div>
+          {error && (
+            <p className="error-text" role="alert">
+              {error}
+            </p>
+          )}
 
-          <button className="primary-button" type="submit" disabled={loading}>
-            {loading ? "Searching…" : "Search rooms"}
-          </button>
-
-          <button
-            className="reset-button"
-            type="button"
-            onClick={handleReset}
-            disabled={loading}
-          >
-            Reset
+          <button type="submit" className="primary" disabled={busy}>
+            {busy ? "Signing in…" : "Sign in"}
           </button>
         </form>
 
-        <section aria-labelledby="results-heading" aria-busy={loading}>
-          <div className="results-heading">
-            <h2 id="results-heading">Available rooms</h2>
-            <span aria-live="polite">
-              {!loading &&
-                !error &&
-                `${properties.length} ${
-                  properties.length === 1 ? "room" : "rooms"
-                } found`}
+        <p className="auth-switch">
+          New to SmartRent?{" "}
+          <Link to="/register">Create an account</Link>
+        </p>
+      </div>
+    </section>
+  );
+}
+
+export default function App() {
+  const [session, setSession] = useState(() => getSession());
+  const [expired, setExpired] = useState(false);
+
+  const location = useLocation();
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!session) return;
+
+    function endSession() {
+      logout();
+      setSession(null);
+      setExpired(true);
+    }
+
+    const timer = window.setTimeout(
+      endSession,
+      Math.max(0, session.expiresAt - Date.now())
+    );
+
+    const interceptor = api.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        if (
+          error.response?.status === 401 &&
+          error.config?.url !== "/auth/login"
+        ) {
+          endSession();
+        }
+
+        return Promise.reject(error);
+      }
+    );
+
+    return () => {
+      window.clearTimeout(timer);
+      api.interceptors.response.eject(interceptor);
+    };
+  }, [session]);
+
+  function handleSignOut() {
+    logout();
+    setSession(null);
+    setExpired(false);
+  }
+
+  function handleSignedIn(newSession) {
+    setSession(newSession);
+    setExpired(false);
+  }
+
+  const role = session?.user.role;
+
+  const roleLabel =
+    role === "OWNER"
+      ? "Owner"
+      : role === "ADMIN"
+        ? "Admin"
+        : "Tenant";
+
+  return (
+    <div className="app">
+      <a className="skip-link" href="#main-content">
+        Skip to content
+      </a>
+
+      <header className="site-header">
+        <div className="header-inner">
+          <Link className="brand" to="/" aria-label="SmartRent home">
+            <span className="brand-mark" aria-hidden="true">
+              S
             </span>
-          </div>
+            Smart<span>Rent</span>
+          </Link>
 
-          {loading && (
-            <div className="state-panel" role="status">
-              Loading rooms…
-            </div>
-          )}
+          <nav className="main-nav" aria-label="Main navigation">
+            <NavLink to="/" end>
+              Find a room
+            </NavLink>
 
-          {!loading && error && (
-            <div className="state-panel error-panel" role="alert">
-              {error}
-            </div>
-          )}
+            {session ? (
+              <>
+                <NavLink to="/dashboard">My dashboard</NavLink>
 
-          {!loading && !error && properties.length === 0 && (
-            <div className="state-panel">
-              <h3>No rooms match your search</h3>
-              <p>Try another locality or increase your budget.</p>
-            </div>
-          )}
+                <button
+                  type="button"
+                  className="quiet-button"
+                  onClick={handleSignOut}
+                >
+                  Sign out
+                </button>
+              </>
+            ) : (
+              <NavLink className="button primary" to="/login">
+                Sign in
+              </NavLink>
+            )}
+          </nav>
+        </div>
+      </header>
 
-          {!loading && !error && properties.length > 0 && (
-            <div className="property-grid">
-              {properties.map((property) => (
-                <article className="property-card" key={property.id}>
-                  <div className="card-top">
-                    <span className="room-type">{property.roomType}</span>
-                    {property.verificationStatus === "VERIFIED" && (
-                      <span className="verified-badge">Verified</span>
-                    )}
+      <main id="main-content" className="main-content" tabIndex={-1}>
+        <Routes>
+          <Route
+            path="/"
+            element={<BrowseRooms session={session} />}
+          />
+          <Route
+  path="/properties/:id"
+  element={<PropertyDetails session={session} />}
+/>
+
+          <Route
+            path="/login"
+            element={
+              session ? (
+                <Navigate to="/dashboard" replace />
+              ) : (
+                <SignIn
+                  onSignedIn={handleSignedIn}
+                  expired={expired}
+                />
+              )
+            }
+          />
+
+          <Route
+            path="/register"
+            element={
+              session ? (
+                <Navigate to="/dashboard" replace />
+              ) : (
+                <Register />
+              )
+            }
+          />
+
+          <Route
+            path="/dashboard"
+            element={
+              session ? (
+                <div className="dashboard-page">
+                  <div className="dashboard-heading">
+                    <div>
+                      <p className="eyebrow">
+                        {roleLabel.toUpperCase()} WORKSPACE
+                      </p>
+
+                      <h1>Hello, {session.user.name}</h1>
+                      <p>Manage your activity in one place.</p>
+                    </div>
+
+                    <span className="account-label">
+                      {session.user.email}
+                    </span>
                   </div>
 
-                  <h3>{property.title}</h3>
-                  <p className="location">{property.locality}</p>
-
-                  <p className="description">
-                    {property.description || "No description provided."}
-                  </p>
-
-                  <div className="amenities">
-                    {property.wifi && <span>Wi-Fi</span>}
-                    {property.food && <span>Food</span>}
-                    {property.ac && <span>AC</span>}
-                    {!property.wifi && !property.food && !property.ac && (
-                      <span>No amenities listed</span>
-                    )}
+                  <div
+                    className="dashboard-surface"
+                    key={session.user.id}
+                  >
+                    {role === "OWNER" && <OwnerDashboard />}
+                    {role === "TENANT" && <TenantDashboard />}
+                    {role === "ADMIN" && <AdminDashboard />}
                   </div>
+                </div>
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
+          />
 
-                  <div className="card-bottom">
-                    <p className="price">
-                      {currency.format(property.rent)}
-                      <span> / month</span>
-                    </p>
-                    <span className="available-label">Available</span>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
+          <Route
+            path="*"
+            element={
+              <section className="state-panel not-found">
+                <h1>Page not found</h1>
+                <p>Let’s get you back to available rooms.</p>
+
+                <Link className="button primary" to="/">
+                  Browse rooms
+                </Link>
+              </section>
+            }
+          />
+        </Routes>
       </main>
 
       <footer className="site-footer">
-        SmartRent · Rental & Room Matching
+        <div>
+          <Link className="brand" to="/">
+            Smart<span>Rent</span>
+          </Link>
+          <p>Find a place for your next chapter.</p>
+        </div>
+
+        <Link to="/">Browse available rooms</Link>
       </footer>
     </div>
   );
