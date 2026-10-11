@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "../services/api";
 
@@ -13,6 +13,12 @@ const currency = new Intl.NumberFormat("en-IN", {
   currency: "INR",
   maximumFractionDigits: 0,
 });
+
+function roomTypeLabel(value) {
+  if (value === "SINGLE") return "Single room";
+  if (value === "SHARED") return "Shared room";
+  return value || "Not listed";
+}
 
 function PropertyCover({ propertyId, title }) {
   const [url, setUrl] = useState("");
@@ -38,10 +44,7 @@ function PropertyCover({ propertyId, title }) {
           throw new Error("Unexpected photo response");
         }
 
-        if (
-          controller.signal.aborted ||
-          response.data.length === 0
-        ) {
+        if (controller.signal.aborted || response.data.length === 0) {
           return;
         }
 
@@ -53,10 +56,7 @@ function PropertyCover({ propertyId, title }) {
 
         const image = await api.get(
           `/properties/${propertyId}/images/${cover.id}/content`,
-          {
-            responseType: "blob",
-            signal: controller.signal,
-          }
+          { responseType: "blob", signal: controller.signal }
         );
 
         if (controller.signal.aborted) return;
@@ -64,13 +64,9 @@ function PropertyCover({ propertyId, title }) {
         objectUrl = URL.createObjectURL(image.data);
         setUrl(objectUrl);
       } catch {
-        if (!controller.signal.aborted) {
-          setFailed(true);
-        }
+        if (!controller.signal.aborted) setFailed(true);
       } finally {
-        if (!controller.signal.aborted) {
-          setLoading(false);
-        }
+        if (!controller.signal.aborted) setLoading(false);
       }
     }
 
@@ -78,10 +74,7 @@ function PropertyCover({ propertyId, title }) {
 
     return () => {
       controller.abort();
-
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [propertyId]);
 
@@ -124,7 +117,7 @@ function PropertyCover({ propertyId, title }) {
           }}
         >
           {loading
-            ? "Loading photo..."
+            ? "Loading photo…"
             : failed
               ? "Photo preview unavailable"
               : "No photo uploaded yet"}
@@ -141,6 +134,10 @@ export default function BrowseRooms() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [sort, setSort] = useState("low");
+  const [selected, setSelected] = useState([]);
+  const [showComparison, setShowComparison] = useState(false);
+  const [comparisonNotice, setComparisonNotice] = useState("");
+  const comparisonHeading = useRef(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -165,43 +162,47 @@ export default function BrowseRooms() {
 
         if (!controller.signal.aborted) {
           setProperties(response.data);
+
+          // Refresh selected details when they appear in new results.
+          // Selections outside the current filters stay selected.
+          setSelected((previous) =>
+            previous.map(
+              (item) =>
+                response.data.find(
+                  (property) => property.id === item.id
+                ) || item
+            )
+          );
         }
       } catch (requestError) {
         if (controller.signal.aborted) return;
 
-        if (requestError.response?.status === 400) {
-          setError("Please check your search values.");
-        } else {
-          setError("We couldn’t load rooms. Please try again.");
-        }
+        setError(
+          requestError.response?.status === 400
+            ? "Please check your search values."
+            : "We couldn’t load rooms. Please try again."
+        );
       } finally {
-        if (!controller.signal.aborted) {
-          setLoading(false);
-        }
+        if (!controller.signal.aborted) setLoading(false);
       }
     }
 
     loadProperties();
-
     return () => controller.abort();
   }, [query]);
 
+  useEffect(() => {
+    if (showComparison) comparisonHeading.current?.focus();
+  }, [showComparison]);
+
   function updateFilter(event) {
     const { name, value } = event.target;
-
-    setFilters((previous) => ({
-      ...previous,
-      [name]: value,
-    }));
+    setFilters((previous) => ({ ...previous, [name]: value }));
   }
 
   function handleSearch(event) {
     event.preventDefault();
-
-    setQuery({
-      ...filters,
-      locality: filters.locality.trim(),
-    });
+    setQuery({ ...filters, locality: filters.locality.trim() });
   }
 
   function handleReset() {
@@ -209,80 +210,114 @@ export default function BrowseRooms() {
     setQuery({ ...emptyFilters });
   }
 
-  function roomTypeLabel(roomType) {
-    if (roomType === "SINGLE") {
-      return "Single room";
+  function toggleComparison(property) {
+    const exists = selected.some((item) => item.id === property.id);
+
+    if (exists) {
+      removeSelection(property.id);
+      return;
     }
 
-    if (roomType === "SHARED") {
-      return "Shared room";
+    if (selected.length >= 3) {
+      setComparisonNotice(
+        "You can compare up to three rooms. Remove one to choose another."
+      );
+      return;
     }
 
-    return roomType;
+    setSelected((previous) => [...previous, property]);
+    setComparisonNotice(`${property.title} added to comparison.`);
   }
 
-  const sortedProperties = [...properties].sort((first, second) => {
-    if (sort === "low") {
-      return Number(first.rent) - Number(second.rent);
-    }
+  function removeSelection(propertyId) {
+    setSelected((previous) =>
+      previous.filter((item) => item.id !== propertyId)
+    );
+    setComparisonNotice("Room removed from comparison.");
+  }
 
-    return Number(second.rent) - Number(first.rent);
-  });
+  function clearComparison() {
+    setSelected([]);
+    setShowComparison(false);
+    setComparisonNotice("Comparison cleared.");
+  }
+
+  const sortedProperties = [...properties].sort((first, second) =>
+    sort === "low"
+      ? Number(first.rent) - Number(second.rent)
+      : Number(second.rent) - Number(first.rent)
+  );
+
+  const comparisonRows = [
+    ["Monthly rent", (property) => currency.format(property.rent)],
+    ["Locality", (property) => property.locality || "Not listed"],
+    ["Room type", (property) => roomTypeLabel(property.roomType)],
+    ["Wi-Fi", (property) => (property.wifi ? "Yes" : "No")],
+    ["Food", (property) => (property.food ? "Yes" : "No")],
+    ["AC", (property) => (property.ac ? "Yes" : "No")],
+    [
+      "Availability",
+      (property) => (property.available ? "Available" : "Unavailable"),
+    ],
+    [
+      "Admin review",
+      (property) =>
+        property.verificationStatus === "VERIFIED"
+          ? "Approved"
+          : property.verificationStatus,
+    ],
+    [
+      "Description",
+      (property) => property.description || "No description provided.",
+    ],
+  ];
+
+  const cellStyle = {
+    padding: "16px",
+    borderBottom: "1px solid #e2e8f0",
+    textAlign: "left",
+    verticalAlign: "top",
+    whiteSpace: "normal",
+    overflowWrap: "anywhere",
+  };
 
   return (
     <>
       <section className="hero">
         <div className="hero-copy">
           <p className="eyebrow">A BETTER PLACE TO BEGIN</p>
-
           <h1>
             Your next room.
             <br />
             <span>Within reach.</span>
           </h1>
-
           <p className="hero-description">
             Find a room that fits your budget and everyday needs.
             Compare the essentials, save your favorites, and connect
             with an owner through a rental request.
           </p>
-
           <a className="button primary" href="#room-search">
-            Find a room
-            <span aria-hidden="true">↗</span>
+            Find a room <span aria-hidden="true">↗</span>
           </a>
         </div>
 
         <aside className="hero-note">
-          <span className="note-label">
-            START WITH WHAT MATTERS
-          </span>
-
+          <span className="note-label">START WITH WHAT MATTERS</span>
           <h2>A place that works for you.</h2>
 
-          <div className="note-item">
-            <span aria-hidden="true">01</span>
-            <div>
-              <strong>Your budget</strong>
-              <p>Filter by monthly rent.</p>
+          {[
+            ["01", "Your budget", "Filter by monthly rent."],
+            ["02", "Your neighborhood", "Search your preferred locality."],
+            ["03", "Your everyday needs", "Compare room types and amenities."],
+          ].map(([number, title, description]) => (
+            <div className="note-item" key={number}>
+              <span aria-hidden="true">{number}</span>
+              <div>
+                <strong>{title}</strong>
+                <p>{description}</p>
+              </div>
             </div>
-          </div>
-
-          <div className="note-item">
-            <span aria-hidden="true">02</span>
-            <div>
-              <strong>Your neighborhood</strong>
-              <p>Search your preferred locality.</p>
-            </div>
-          </div>
-
-          <div className="note-item">
-            <span aria-hidden="true">03</span>
-            <div>
-              <strong>Your everyday needs</strong>
-              <p>Check room type and listed amenities.</p>
-            </div>
-          </div>
+          ))}
         </aside>
       </section>
 
@@ -334,22 +369,146 @@ export default function BrowseRooms() {
             </select>
           </label>
 
-          <button
-            className="primary"
-            disabled={loading}
-            type="submit"
-          >
+          <button className="primary" disabled={loading} type="submit">
             {loading ? "Searching…" : "Search rooms"}
           </button>
 
-          <button
-            type="button"
-            onClick={handleReset}
-            disabled={loading}
-          >
+          <button type="button" onClick={handleReset} disabled={loading}>
             Clear
           </button>
         </form>
+
+        <section
+          aria-label="Room comparison selections"
+          style={{
+            marginTop: "24px",
+            padding: "20px",
+            border: "1px solid #dbe7e2",
+            borderRadius: "14px",
+            background: "#f0f7f3",
+          }}
+        >
+          <h3 style={{ marginTop: 0 }}>Compare rooms</h3>
+          <p>Select two or three rooms to compare their details.</p>
+
+          <p role="status">
+            {comparisonNotice || `${selected.length} of 3 rooms selected.`}
+          </p>
+
+          {selected.length > 0 && (
+            <ul style={{ paddingLeft: "20px" }}>
+              {selected.map((property) => (
+                <li key={property.id} style={{ marginBottom: "10px" }}>
+                  <span style={{ overflowWrap: "anywhere" }}>
+                    {property.title}
+                  </span>{" "}
+                  <button
+                    type="button"
+                    onClick={() => removeSelection(property.id)}
+                    aria-label={`Remove ${property.title} from comparison`}
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "12px" }}>
+            <button
+              type="button"
+              className="primary"
+              disabled={selected.length < 2 || loading}
+              onClick={() => {
+                setShowComparison(true);
+                setComparisonNotice("");
+              }}
+            >
+              Compare selected rooms ({selected.length})
+            </button>
+
+            {selected.length > 0 && (
+              <button type="button" onClick={clearComparison}>
+                Clear comparison
+              </button>
+            )}
+          </div>
+
+          {showComparison && selected.length >= 2 && (
+            <div style={{ marginTop: "24px", minWidth: 0 }}>
+              <h3 ref={comparisonHeading} tabIndex={-1}>
+                Room comparison
+              </h3>
+              <p>
+                Selections remain when you change search filters.
+                Confirm current availability on the room details page.
+              </p>
+
+              <div
+                role="region"
+                aria-label="Room comparison table; scroll horizontally on small screens"
+                tabIndex={0}
+                style={{ overflowX: "auto", maxWidth: "100%" }}
+              >
+                <table
+                  style={{
+                    width: "100%",
+                    minWidth: selected.length === 3 ? "760px" : "560px",
+                    borderCollapse: "collapse",
+                    tableLayout: "fixed",
+                    background: "#fff",
+                  }}
+                >
+                  <caption
+                    style={{
+                      textAlign: "left",
+                      padding: "12px",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Comparing {selected.length} selected rooms
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col" style={cellStyle}>Feature</th>
+                      {selected.map((property) => (
+                        <th
+                          key={property.id}
+                          scope="col"
+                          style={{ ...cellStyle, background: "#e7f0eb" }}
+                        >
+                          <Link to={`/properties/${property.id}`}>
+                            {property.title}
+                          </Link>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {comparisonRows.map(([label, value]) => (
+                      <tr key={label}>
+                        <th scope="row" style={cellStyle}>{label}</th>
+                        {selected.map((property) => (
+                          <td key={property.id} style={cellStyle}>
+                            {value(property)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowComparison(false)}
+                style={{ marginTop: "16px" }}
+              >
+                Hide comparison
+              </button>
+            </div>
+          )}
+        </section>
 
         <div className="results-bar">
           <p aria-live="polite">
@@ -384,7 +543,6 @@ export default function BrowseRooms() {
         {!loading && error && (
           <div className="state-panel" role="alert">
             <p>{error}</p>
-
             <button
               type="button"
               onClick={() => setQuery({ ...query })}
@@ -401,7 +559,6 @@ export default function BrowseRooms() {
               Try another locality or clear your filters to see
               available rooms.
             </p>
-
             <button type="button" onClick={handleReset}>
               Clear filters
             </button>
@@ -410,59 +567,83 @@ export default function BrowseRooms() {
 
         {!loading && !error && properties.length > 0 && (
           <div className="property-grid">
-            {sortedProperties.map((property) => (
-              <article className="property-card" key={property.id}>
-                <PropertyCover
-                  propertyId={property.id}
-                  title={property.title}
-                />
+            {sortedProperties.map((property) => {
+              const isSelected = selected.some(
+                (item) => item.id === property.id
+              );
 
-                <div className="card-top">
-                  <span className="room-type">
-                    {roomTypeLabel(property.roomType)}
-                  </span>
+              return (
+                <article className="property-card" key={property.id}>
+                  <PropertyCover
+                    propertyId={property.id}
+                    title={property.title}
+                  />
 
-                  {property.verificationStatus === "VERIFIED" && (
-                    <span className="badge">Admin reviewed</span>
-                  )}
-                </div>
+                  <div className="card-top">
+                    <span className="room-type">
+                      {roomTypeLabel(property.roomType)}
+                    </span>
+                    {property.verificationStatus === "VERIFIED" && (
+                      <span className="badge">Admin reviewed</span>
+                    )}
+                  </div>
 
-                <p className="location">{property.locality}</p>
-
-                <h3>{property.title}</h3>
-
-                <p className="description">
-                  {property.description || "No description provided."}
-                </p>
-
-                <div className="amenities">
-                  {property.wifi && <span>Wi-Fi</span>}
-                  {property.food && <span>Food</span>}
-                  {property.ac && <span>AC</span>}
-
-                  {!property.wifi && !property.food && !property.ac && (
-                    <span>Amenities not listed</span>
-                  )}
-                </div>
-
-                <div className="card-bottom">
-                  <p className="price">
-                    {currency.format(property.rent)}
-                    <small> / month</small>
+                  <p className="location">{property.locality}</p>
+                  <h3>{property.title}</h3>
+                  <p className="description">
+                    {property.description || "No description provided."}
                   </p>
 
-                  <span className="available">Available</span>
-                </div>
+                  <div className="amenities">
+                    {property.wifi && <span>Wi-Fi</span>}
+                    {property.food && <span>Food</span>}
+                    {property.ac && <span>AC</span>}
+                    {!property.wifi && !property.food && !property.ac && (
+                      <span>Amenities not listed</span>
+                    )}
+                  </div>
 
-                <Link
-                  className="button card-link"
-                  to={`/properties/${property.id}`}
-                  aria-label={`View details for ${property.title}`}
-                >
-                  View room details →
-                </Link>
-              </article>
-            ))}
+                  <div className="card-bottom">
+                    <p className="price">
+                      {currency.format(property.rent)}
+                      <small> / month</small>
+                    </p>
+                    <span className="available">Available</span>
+                  </div>
+
+                  <Link
+                    className="button card-link"
+                    to={`/properties/${property.id}`}
+                    aria-label={`View details for ${property.title}`}
+                  >
+                    View room details →
+                  </Link>
+
+                  <button
+                    type="button"
+                    aria-pressed={isSelected}
+                    aria-label={
+                      isSelected
+                        ? `Remove ${property.title} from comparison`
+                        : `Add ${property.title} to comparison`
+                    }
+                    disabled={!isSelected && selected.length >= 3}
+                    onClick={() => toggleComparison(property)}
+                    style={{
+                      width: "100%",
+                      marginTop: "12px",
+                      border: isSelected
+                        ? "2px solid #166552"
+                        : "1px solid #cbd5e1",
+                      background: isSelected ? "#e7f0eb" : "#fff",
+                      color: "#166552",
+                    }}
+                  >
+                    {isSelected ? "✓ Selected for comparison" : "Add to compare"}
+                  </button>
+                </article>
+              );
+            })}
           </div>
         )}
 
