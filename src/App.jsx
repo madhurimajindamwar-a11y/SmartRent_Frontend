@@ -1,6 +1,4 @@
 import { useEffect, useState } from "react";
-import PropertyDetails from "./pages/PropertyDetails";
-import SmartMatches from "./pages/SmartMatches";
 import {
   Link,
   NavLink,
@@ -14,7 +12,11 @@ import { getSession, login, logout } from "./services/auth";
 import api from "./services/api";
 
 import BrowseRooms from "./pages/BrowseRooms";
+import PropertyDetails from "./pages/PropertyDetails";
+import SmartMatches from "./pages/SmartMatches";
+import Profile from "./pages/Profile";
 import Register from "./pages/Register";
+
 import OwnerDashboard from "./components/OwnerDashboard";
 import TenantDashboard from "./components/TenantDashboard";
 import AdminDashboard from "./components/AdminDashboard";
@@ -31,7 +33,6 @@ function SignIn({ onSignedIn, expired }) {
 
   async function handleSubmit(event) {
     event.preventDefault();
-
     if (busy) return;
 
     setBusy(true);
@@ -141,7 +142,6 @@ function SignIn({ onSignedIn, expired }) {
 export default function App() {
   const [session, setSession] = useState(() => getSession());
   const [expired, setExpired] = useState(false);
-
   const location = useLocation();
 
   useEffect(() => {
@@ -193,7 +193,7 @@ export default function App() {
     setExpired(false);
   }
 
-  const role = session?.user.role;
+  const role = session?.user?.role;
 
   const roleLabel =
     role === "OWNER"
@@ -224,10 +224,12 @@ export default function App() {
 
             {session ? (
               <>
-                <NavLink to="/dashboard">My dashboard</NavLink>
                 {role === "TENANT" && (
-  <NavLink to="/matches">Smart matches</NavLink>
-)}
+                  <NavLink to="/matches">Smart matches</NavLink>
+                )}
+
+                <NavLink to="/dashboard">My dashboard</NavLink>
+                <NavLink to="/profile">My profile</NavLink>
 
                 <button
                   type="button"
@@ -249,26 +251,38 @@ export default function App() {
       <main id="main-content" className="main-content" tabIndex={-1}>
         <Routes>
           <Route
-  path="/matches"
-  element={
-    session?.user?.role === "TENANT" ? (
-      <SmartMatches />
-    ) : (
-      <Navigate
-        to={session ? "/dashboard" : "/login"}
-        replace
-      />
-    )
-  }
-/>
-          <Route
             path="/"
             element={<BrowseRooms session={session} />}
           />
+
           <Route
-  path="/properties/:id"
-  element={<PropertyDetails session={session} />}
-/>
+            path="/properties/:id"
+            element={<PropertyDetails session={session} />}
+          />
+
+          <Route
+            path="/matches"
+            element={
+              !session ? (
+                <Navigate to="/login" replace />
+              ) : role === "TENANT" ? (
+                <SmartMatches />
+              ) : (
+                <Navigate to="/dashboard" replace />
+              )
+            }
+          />
+
+          <Route
+            path="/profile"
+            element={
+              session ? (
+                <Profile onProfileUpdated={handleSignedIn} />
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
+          />
 
           <Route
             path="/login"

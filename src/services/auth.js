@@ -56,3 +56,22 @@ try {
     return null;
 }
 }
+export function updateSessionUser(user) {
+  const session = getSession();
+
+  if (!session || String(session.user.id) !== String(user.id)) {
+    throw new Error("Your session ended. Please sign in again.");
+  }
+
+  const updatedSession = {
+    ...session,
+    user: {
+      ...session.user,
+      name: user.name,
+      email: user.email,
+    },
+  };
+
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify(updatedSession));
+  return updatedSession;
+}
