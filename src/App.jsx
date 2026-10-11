@@ -231,6 +231,9 @@ export default function App() {
 
                 <NavLink to="/dashboard">My dashboard</NavLink>
                 <NavLink to="/profile">My profile</NavLink>
+                {(role === "TENANT" || role === "OWNER") && (
+  <NavLink to="/maintenance">Maintenance</NavLink>
+)}
 
                 <button
                   type="button"
