@@ -77,8 +77,20 @@ These checks are manual smoke tests, not a complete automated test suite.
 
 This version supports one active rental per listing and one active rental per tenant. Matching uses deterministic preference weights, not machine learning.
 
-Visits, payments, maintenance, reviews, maps, password reset, profile editing, and advanced admin management are not implemented.
+Visits, payments, reviews, maps, password change/reset, notifications, and advanced admin management are not implemented.
 
 ## Backend repository
 
 https://github.com/madhurimajindamwar-a11y/SmartRent_Backend
+
+
+## Additional features verified live
+
+- Profile name/email editing with current-password confirmation.
+- Saved profile summary and dashboard session updates.
+- Incorrect-password and duplicate-email rejection.
+- Comparison of two or three selected rooms.
+- Comparison selection removal and clearing.
+- Tenant maintenance submission for an active rental.
+- Owner maintenance updates: Open → In Progress → Resolved.
+- Tenant visibility of maintenance status changes.
