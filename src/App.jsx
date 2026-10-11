@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Maintenance from "./pages/Maintenance";
 import {
   Link,
   NavLink,
@@ -343,6 +344,18 @@ export default function App() {
               )
             }
           />
+          <Route
+  path="/maintenance"
+  element={
+    !session ? (
+      <Navigate to="/login" replace />
+    ) : role === "TENANT" || role === "OWNER" ? (
+      <Maintenance session={session} />
+    ) : (
+      <Navigate to="/dashboard" replace />
+    )
+  }
+/>
 
           <Route
             path="*"
