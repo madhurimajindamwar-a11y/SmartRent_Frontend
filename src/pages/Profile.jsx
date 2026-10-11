@@ -4,17 +4,32 @@ import api from "../services/api";
 import { updateSessionUser } from "../services/auth";
 
 export default function Profile({ onProfileUpdated }) {
+  const [profile, setProfile] = useState(null);
   const [form, setForm] = useState({
     name: "",
     email: "",
     currentPassword: "",
   });
+  const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [reload, setReload] = useState(0);
   const saving = useRef(false);
+  const heading = useRef(null);
+
+  function validateUser(user) {
+    if (
+      user?.id == null ||
+      typeof user.name !== "string" ||
+      typeof user.email !== "string"
+    ) {
+      throw new Error("Unexpected profile response");
+    }
+
+    return user;
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -28,17 +43,11 @@ export default function Profile({ onProfileUpdated }) {
           signal: controller.signal,
         });
 
-        const user = response.data;
-
-        if (
-          user?.id == null ||
-          typeof user.name !== "string" ||
-          typeof user.email !== "string"
-        ) {
-          throw new Error("Unexpected profile response");
-        }
+        const user = validateUser(response.data);
 
         if (!controller.signal.aborted) {
+          setProfile(user);
+          setEditing(false);
           setForm({
             name: user.name,
             email: user.email,
@@ -62,6 +71,29 @@ export default function Profile({ onProfileUpdated }) {
     return () => controller.abort();
   }, [reload]);
 
+  function startEditing() {
+    setForm({
+      name: profile.name,
+      email: profile.email,
+      currentPassword: "",
+    });
+    setError("");
+    setNotice("");
+    setEditing(true);
+  }
+
+  function cancelEditing() {
+    setForm({
+      name: profile.name,
+      email: profile.email,
+      currentPassword: "",
+    });
+    setError("");
+    setNotice("");
+    setEditing(false);
+    heading.current?.focus();
+  }
+
   function handleChange(event) {
     const { name, value } = event.target;
 
@@ -76,7 +108,7 @@ export default function Profile({ onProfileUpdated }) {
   async function handleSubmit(event) {
     event.preventDefault();
 
-    if (saving.current || loading) return;
+    if (saving.current || loading || !profile) return;
 
     setError("");
     setNotice("");
@@ -107,25 +139,20 @@ export default function Profile({ onProfileUpdated }) {
         currentPassword: form.currentPassword,
       });
 
-      const user = response.data;
-
-      if (
-        user?.id == null ||
-        typeof user.name !== "string" ||
-        typeof user.email !== "string"
-      ) {
-        throw new Error("Unexpected profile response");
-      }
-
+      const user = validateUser(response.data);
       const updatedSession = updateSessionUser(user);
+
       onProfileUpdated(updatedSession);
 
+      setProfile(user);
       setForm({
         name: user.name,
         email: user.email,
         currentPassword: "",
       });
+      setEditing(false);
       setNotice("Profile updated successfully.");
+      heading.current?.focus();
     } catch (requestError) {
       const status = requestError.response?.status;
 
@@ -157,16 +184,28 @@ export default function Profile({ onProfileUpdated }) {
     }
   }
 
+  const roleLabel =
+    profile?.role === "OWNER"
+      ? "Property owner"
+      : profile?.role === "ADMIN"
+        ? "Administrator"
+        : "Tenant";
+
   return (
     <section
       className="auth-card"
       style={{ maxWidth: "640px", margin: "32px auto" }}
     >
       <p className="eyebrow">YOUR ACCOUNT</p>
-      <h1>My profile</h1>
+
+      <h1 ref={heading} tabIndex={-1}>
+        {editing ? "Edit profile" : "My profile"}
+      </h1>
+
       <p>
-        Update your name and email. Confirm changes with your current
-        password.
+        {editing
+          ? "Update your details and confirm with your current password."
+          : "Your saved account information."}
       </p>
 
       {loading && <p role="status">Loading your profile…</p>}
@@ -183,7 +222,54 @@ export default function Profile({ onProfileUpdated }) {
         </p>
       )}
 
-      {!loading && (
+      {!loading && profile && !editing && (
+        <>
+          <dl style={{ margin: "24px 0" }}>
+            {[
+              ["Full name", profile.name],
+              ["Email address", profile.email],
+              ["Account type", roleLabel],
+            ].map(([label, value]) => (
+              <div
+                key={label}
+                style={{
+                  padding: "16px 0",
+                  borderBottom: "1px solid #e2e8f0",
+                }}
+              >
+                <dt
+                  style={{
+                    fontSize: "14px",
+                    color: "#475569",
+                    marginBottom: "6px",
+                  }}
+                >
+                  {label}
+                </dt>
+                <dd
+                  style={{
+                    margin: 0,
+                    fontWeight: 600,
+                    overflowWrap: "anywhere",
+                  }}
+                >
+                  {value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+
+          <button
+            type="button"
+            className="primary"
+            onClick={startEditing}
+          >
+            Edit profile
+          </button>
+        </>
+      )}
+
+      {!loading && profile && editing && (
         <form onSubmit={handleSubmit} className="stack-form">
           <label htmlFor="profile-name">
             Full name
@@ -191,6 +277,7 @@ export default function Profile({ onProfileUpdated }) {
               id="profile-name"
               name="name"
               autoComplete="name"
+              autoFocus
               value={form.name}
               onChange={handleChange}
               maxLength={100}
@@ -229,12 +316,16 @@ export default function Profile({ onProfileUpdated }) {
             />
           </label>
 
+          <button type="submit" className="primary" disabled={busy}>
+            {busy ? "Saving…" : "Save changes"}
+          </button>
+
           <button
-            type="submit"
-            className="primary"
-            disabled={busy || !form.name || !form.email}
+            type="button"
+            disabled={busy}
+            onClick={cancelEditing}
           >
-            {busy ? "Saving…" : "Save profile"}
+            Cancel
           </button>
         </form>
       )}
@@ -248,16 +339,18 @@ export default function Profile({ onProfileUpdated }) {
           marginTop: "20px",
         }}
       >
-        <button
-          type="button"
-          disabled={loading || busy}
-          onClick={() => {
-            setNotice("");
-            setReload((value) => value + 1);
-          }}
-        >
-          Reload profile
-        </button>
+        {(!profile || error) && (
+          <button
+            type="button"
+            disabled={loading || busy}
+            onClick={() => {
+              setNotice("");
+              setReload((value) => value + 1);
+            }}
+          >
+            Reload profile
+          </button>
+        )}
 
         <Link to="/dashboard">Back to dashboard</Link>
       </div>
