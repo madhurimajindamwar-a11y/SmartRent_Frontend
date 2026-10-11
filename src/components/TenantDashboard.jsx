@@ -16,7 +16,7 @@ const cardStyle = {
 
 const gridStyle = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(240px, 100%), 1fr))",
   gap: "16px",
   marginTop: "16px",
 };
@@ -29,17 +29,14 @@ function TenantPhoto({ propertyId, photoId, title, number }) {
     const controller = new AbortController();
     let objectUrl;
 
-    async function loadPhoto() {
-      setUrl("");
-      setFailed(false);
+    setUrl("");
+    setFailed(false);
 
+    async function loadPhoto() {
       try {
         const response = await api.get(
           `/properties/${propertyId}/images/${photoId}/content`,
-          {
-            responseType: "blob",
-            signal: controller.signal,
-          }
+          { responseType: "blob", signal: controller.signal }
         );
 
         if (controller.signal.aborted) return;
@@ -47,9 +44,7 @@ function TenantPhoto({ propertyId, photoId, title, number }) {
         objectUrl = URL.createObjectURL(response.data);
         setUrl(objectUrl);
       } catch {
-        if (!controller.signal.aborted) {
-          setFailed(true);
-        }
+        if (!controller.signal.aborted) setFailed(true);
       }
     }
 
@@ -57,20 +52,12 @@ function TenantPhoto({ propertyId, photoId, title, number }) {
 
     return () => {
       controller.abort();
-
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [propertyId, photoId]);
 
-  if (failed) {
-    return <p>Photo preview unavailable.</p>;
-  }
-
-  if (!url) {
-    return <p role="status">Loading photo...</p>;
-  }
+  if (failed) return <p>Photo preview unavailable.</p>;
+  if (!url) return <p role="status">Loading photo…</p>;
 
   return (
     <figure style={{ margin: 0, minWidth: 0 }}>
@@ -88,7 +75,6 @@ function TenantPhoto({ propertyId, photoId, title, number }) {
           }}
         />
       </a>
-
       <figcaption style={{ fontSize: "13px", marginTop: "5px" }}>
         {number === 1 ? "Cover photo" : `Photo ${number}`}
       </figcaption>
@@ -112,12 +98,6 @@ function TenantPropertyPhotos({ propertyId, title }) {
       setPhotos([]);
       setExpanded(false);
 
-      if (propertyId == null) {
-        setError("Photos unavailable: missing property ID.");
-        setLoading(false);
-        return;
-      }
-
       try {
         const response = await api.get(
           `/properties/${propertyId}/images`,
@@ -131,39 +111,32 @@ function TenantPropertyPhotos({ propertyId, title }) {
           throw new Error("Unexpected photo response");
         }
 
-        if (!controller.signal.aborted) {
-          setPhotos(response.data);
-        }
+        if (!controller.signal.aborted) setPhotos(response.data);
       } catch (requestError) {
         if (controller.signal.aborted) return;
 
         const status = requestError.response?.status;
-
         setError(
           status === 403 || status === 404
             ? "Photos are not currently available for this listing."
             : "Could not load property photos."
         );
       } finally {
-        if (!controller.signal.aborted) {
-          setLoading(false);
-        }
+        if (!controller.signal.aborted) setLoading(false);
       }
     }
 
     loadPhotos();
-
     return () => controller.abort();
   }, [propertyId, retry]);
 
   return (
     <div style={{ margin: "12px 0 16px" }}>
-      {loading && <p role="status">Loading photos...</p>}
+      {loading && <p role="status">Loading photos…</p>}
 
       {!loading && error && (
         <div>
           <p role="status">{error}</p>
-
           <button
             type="button"
             onClick={() => setRetry((value) => value + 1)}
@@ -174,9 +147,7 @@ function TenantPropertyPhotos({ propertyId, title }) {
       )}
 
       {!loading && !error && photos.length === 0 && (
-        <p style={{ color: "#475569" }}>
-          No photos uploaded yet.
-        </p>
+        <p>No photos uploaded yet.</p>
       )}
 
       {!loading && !error && photos.length > 0 && (
@@ -234,13 +205,12 @@ export default function TenantDashboard() {
   const [favorites, setFavorites] = useState([]);
   const [requests, setRequests] = useState([]);
   const [rentals, setRentals] = useState([]);
-
+  const [historyProperties, setHistoryProperties] = useState({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [reload, setReload] = useState(0);
-
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [requestMessage, setRequestMessage] = useState("");
 
@@ -253,7 +223,6 @@ export default function TenantDashboard() {
 
       try {
         const config = { signal: controller.signal };
-
         const responses = await Promise.all([
           api.get("/properties/search", config),
           api.get("/favorites", config),
@@ -265,33 +234,69 @@ export default function TenantDashboard() {
           throw new Error("Unexpected dashboard response");
         }
 
-        if (!controller.signal.aborted) {
-          setRooms(responses[0].data);
-          setFavorites(responses[1].data);
-          setRequests(responses[2].data);
-          setRentals(responses[3].data);
-        }
+        if (controller.signal.aborted) return;
+
+        const [roomList, favoriteList, requestList, rentalList] =
+          responses.map((response) => response.data);
+
+        const propertyMap = {};
+
+        [...roomList, ...favoriteList].forEach((property) => {
+          propertyMap[property.id] = property;
+        });
+
+        const historyIds = [
+          ...new Set(
+            [...requestList, ...rentalList]
+              .map((item) => item.propertyId)
+              .filter((id) => id != null)
+          ),
+        ];
+
+        const missingIds = historyIds.filter((id) => !propertyMap[id]);
+
+        // History lookups may fail if a listing is no longer public.
+        // Those failures must not hide the tenant's requests or rentals.
+        const details = await Promise.allSettled(
+          missingIds.map((id) => api.get(`/properties/${id}`, config))
+        );
+
+        if (controller.signal.aborted) return;
+
+        details.forEach((result, index) => {
+          if (
+            result.status === "fulfilled" &&
+            result.value.data?.id != null &&
+            typeof result.value.data.title === "string"
+          ) {
+            propertyMap[missingIds[index]] = result.value.data;
+          }
+        });
+
+        setRooms(roomList);
+        setFavorites(favoriteList);
+        setRequests(requestList);
+        setRentals(rentalList);
+        setHistoryProperties(propertyMap);
+        setSelectedRoom(null);
       } catch (requestError) {
         if (controller.signal.aborted) return;
 
         const status = requestError.response?.status;
 
-        if (status === 401) {
-          setError("Session expired. Log out and log in again.");
-        } else if (status === 403) {
-          setError("This dashboard requires a tenant account.");
-        } else {
-          setError("Could not load the dashboard. Click Refresh to retry.");
-        }
+        setError(
+          status === 401
+            ? "Session expired. Log out and log in again."
+            : status === 403
+              ? "This dashboard requires a tenant account."
+              : "Could not load the dashboard. Click Refresh to retry."
+        );
       } finally {
-        if (!controller.signal.aborted) {
-          setLoading(false);
-        }
+        if (!controller.signal.aborted) setLoading(false);
       }
     }
 
     loadDashboard();
-
     return () => controller.abort();
   }, [reload]);
 
@@ -306,46 +311,38 @@ export default function TenantDashboard() {
   function hasPendingRequest(propertyId) {
     return requests.some(
       (request) =>
-        request.propertyId === propertyId &&
-        request.status === "PENDING"
+        request.propertyId === propertyId && request.status === "PENDING"
     );
   }
 
   function propertyTitle(propertyId) {
-    const property =
-      rooms.find((item) => item.id === propertyId) ||
-      favorites.find((item) => item.id === propertyId);
-
-    return property?.title || `Property #${propertyId}`;
+    return historyProperties[propertyId]?.title || `Property #${propertyId}`;
   }
 
   function showActionError(requestError, conflictMessage) {
     const status = requestError.response?.status;
 
-    if (status === 401) {
-      setError("Session expired. Log out and log in again.");
-    } else if (status === 403) {
-      setError("You do not have permission to perform this action.");
-    } else if (status === 404) {
-      setError("The item is no longer available. Refresh the dashboard.");
-    } else if (status === 409) {
-      setError(conflictMessage);
-    } else if (status === 400) {
-      setError("Check your request details and try again.");
-    } else {
-      setError(
-        "Could not confirm the action. Refresh the dashboard before retrying."
-      );
-    }
+    setError(
+      status === 401
+        ? "Session expired. Log out and log in again."
+        : status === 403
+          ? "You do not have permission to perform this action."
+          : status === 404
+            ? "The item is no longer available. Refresh the dashboard."
+            : status === 409
+              ? conflictMessage
+              : status === 400
+                ? "Check your request details and try again."
+                : "Could not confirm the action. Refresh before retrying."
+    );
   }
 
   async function toggleFavorite(property) {
-    if (busy) return;
+    if (busy || loading) return;
 
     setBusy(true);
     setError("");
     setNotice("");
-
     const removing = isFavorite(property.id);
 
     try {
@@ -358,7 +355,6 @@ export default function TenantDashboard() {
       setNotice(
         removing ? "Removed from favorites." : "Added to favorites."
       );
-
       setReload((value) => value + 1);
     } catch (requestError) {
       showActionError(
@@ -371,6 +367,16 @@ export default function TenantDashboard() {
   }
 
   function openRequestForm(property) {
+    if (
+      busy ||
+      loading ||
+      hasActiveRental ||
+      !property.available ||
+      hasPendingRequest(property.id)
+    ) {
+      return;
+    }
+
     setSelectedRoom(property);
     setRequestMessage("I am interested in renting this room.");
     setError("");
@@ -379,8 +385,7 @@ export default function TenantDashboard() {
 
   async function submitRequest(event) {
     event.preventDefault();
-
-    if (busy || !selectedRoom) return;
+    if (busy || loading || !selectedRoom || hasActiveRental) return;
 
     setBusy(true);
     setError("");
@@ -400,8 +405,8 @@ export default function TenantDashboard() {
     } catch (requestError) {
       showActionError(
         requestError,
-        "Request blocked: the room may be unavailable, you may already " +
-          "have a pending request for it, or you may have an active rental."
+        "The room may be unavailable, a request may already be pending, " +
+          "or you may already have an active rental."
       );
     } finally {
       setBusy(false);
@@ -409,7 +414,7 @@ export default function TenantDashboard() {
   }
 
   async function cancelRequest(requestId) {
-    if (busy || !window.confirm("Cancel this rental request?")) {
+    if (busy || loading || !window.confirm("Cancel this rental request?")) {
       return;
     }
 
@@ -462,8 +467,7 @@ export default function TenantDashboard() {
             }}
             style={{
               fontWeight: tab === value ? "bold" : "normal",
-              borderBottom:
-                tab === value ? "3px solid #2458ed" : undefined,
+              borderBottom: tab === value ? "3px solid #2458ed" : undefined,
             }}
           >
             {label}
@@ -480,20 +484,12 @@ export default function TenantDashboard() {
       </div>
 
       {notice && (
-        <p role="status" style={{ color: "#15803d" }}>
-          {notice}
-        </p>
+        <p role="status" style={{ color: "#15803d" }}>{notice}</p>
       )}
-
       {error && (
-        <p role="alert" style={{ color: "#b91c1c" }}>
-          {error}
-        </p>
+        <p role="alert" style={{ color: "#b91c1c" }}>{error}</p>
       )}
-
-      {loading && (
-        <p role="status">Loading your dashboard...</p>
-      )}
+      {loading && <p role="status">Loading your dashboard…</p>}
 
       {!loading && !error && (
         <>
@@ -510,17 +506,11 @@ export default function TenantDashboard() {
               style={{ ...cardStyle, marginBottom: "20px" }}
             >
               <h3>Request: {selectedRoom.title}</h3>
-
-              <label htmlFor="rental-message">
-                Message to the owner
-              </label>
-
+              <label htmlFor="rental-message">Message to the owner</label>
               <textarea
                 id="rental-message"
                 value={requestMessage}
-                onChange={(event) =>
-                  setRequestMessage(event.target.value)
-                }
+                onChange={(event) => setRequestMessage(event.target.value)}
                 maxLength={1000}
                 rows={3}
                 disabled={busy}
@@ -532,15 +522,10 @@ export default function TenantDashboard() {
                   padding: "10px",
                 }}
               />
-
-              <div style={{ display: "flex", gap: "10px" }}>
-                <button
-                  type="submit"
-                  disabled={busy || hasActiveRental}
-                >
-                  {busy ? "Sending..." : "Send rental request"}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+                <button type="submit" disabled={busy || hasActiveRental}>
+                  {busy ? "Sending…" : "Send rental request"}
                 </button>
-
                 <button
                   type="button"
                   disabled={busy}
@@ -566,34 +551,21 @@ export default function TenantDashboard() {
                 {displayedProperties.map((property) => (
                   <article key={property.id} style={cardStyle}>
                     <h3>{property.title}</h3>
-
                     <TenantPropertyPhotos
                       key={`${property.id}-${reload}`}
                       propertyId={property.id}
                       title={property.title}
                     />
-
-                    <p>
-                      {property.locality} · {property.roomType}
-                    </p>
-
+                    <p>{property.locality} · {property.roomType}</p>
                     <p>
                       <strong>{currency.format(property.rent)}</strong>
                       {" / month"}
                     </p>
-
                     <p>{property.description}</p>
-
-                    <p>
-                      {property.available ? "Available" : "Unavailable"}
-                    </p>
+                    <p>{property.available ? "Available" : "Unavailable"}</p>
 
                     <div
-                      style={{
-                        display: "flex",
-                        flexWrap: "wrap",
-                        gap: "10px",
-                      }}
+                      style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}
                     >
                       <button
                         type="button"
@@ -604,7 +576,6 @@ export default function TenantDashboard() {
                           ? "Remove favorite"
                           : "Save favorite"}
                       </button>
-
                       <button
                         type="button"
                         disabled={
@@ -628,20 +599,14 @@ export default function TenantDashboard() {
 
           {tab === "requests" && (
             <>
-              {requests.length === 0 && (
-                <p>No rental requests yet.</p>
-              )}
-
+              {requests.length === 0 && <p>No rental requests yet.</p>}
               <div style={gridStyle}>
                 {requests.map((request) => (
                   <article key={request.id} style={cardStyle}>
                     <h3>{propertyTitle(request.propertyId)}</h3>
                     <p>Request #{request.id}</p>
                     <p>{request.message}</p>
-
-                    <p>
-                      Status: <strong>{request.status}</strong>
-                    </p>
+                    <p>Status: <strong>{request.status}</strong></p>
 
                     {request.status === "PENDING" && (
                       <button
@@ -660,27 +625,19 @@ export default function TenantDashboard() {
 
           {tab === "rentals" && (
             <>
-              {rentals.length === 0 && (
-                <p>No rental records yet.</p>
-              )}
-
+              {rentals.length === 0 && <p>No rental records yet.</p>}
               <div style={gridStyle}>
                 {rentals.map((rental) => (
                   <article key={rental.id} style={cardStyle}>
                     <h3>{propertyTitle(rental.propertyId)}</h3>
                     <p>Rental #{rental.id}</p>
-
                     <p>
                       Agreed rent: {currency.format(rental.agreedRent)}
                       {" / month"}
                     </p>
-
                     <p>Start date: {rental.startDate}</p>
                     <p>End date: {rental.endDate || "Not set"}</p>
-
-                    <p>
-                      Status: <strong>{rental.status}</strong>
-                    </p>
+                    <p>Status: <strong>{rental.status}</strong></p>
                   </article>
                 ))}
               </div>
