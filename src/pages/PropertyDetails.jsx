@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import api from "../services/api";
+import PropertyReviews from "../components/PropertyReviews";S
 
 const currency = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -487,7 +488,11 @@ export default function PropertyDetails({ session }) {
                   Confirm availability and any separate charges with the owner.
                 </p>
               </section>
-
+              <PropertyReviews
+  key={`${property.id}:${session?.user?.id ?? "visitor"}`}
+  propertyId={property.id}
+  session={session}
+/>
               <section className="details-section">
                 <h2>Before you decide</h2>
                 <ul className="details-checklist">
