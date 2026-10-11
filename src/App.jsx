@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import PropertyDetails from "./pages/PropertyDetails";
+import SmartMatches from "./pages/SmartMatches";
 import {
   Link,
   NavLink,
@@ -224,6 +225,9 @@ export default function App() {
             {session ? (
               <>
                 <NavLink to="/dashboard">My dashboard</NavLink>
+                {role === "TENANT" && (
+  <NavLink to="/matches">Smart matches</NavLink>
+)}
 
                 <button
                   type="button"
@@ -244,6 +248,19 @@ export default function App() {
 
       <main id="main-content" className="main-content" tabIndex={-1}>
         <Routes>
+          <Route
+  path="/matches"
+  element={
+    session?.user?.role === "TENANT" ? (
+      <SmartMatches />
+    ) : (
+      <Navigate
+        to={session ? "/dashboard" : "/login"}
+        replace
+      />
+    )
+  }
+/>
           <Route
             path="/"
             element={<BrowseRooms session={session} />}
