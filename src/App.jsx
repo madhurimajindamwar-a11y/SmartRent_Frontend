@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import Maintenance from "./pages/Maintenance";
+import Notifications from "./pages/Notifications";
 import {
   Link,
   NavLink,
@@ -230,6 +231,7 @@ export default function App() {
                 )}
 
                 <NavLink to="/dashboard">My dashboard</NavLink>
+                <NavLink to="/notifications">Notifications</NavLink>
                 <NavLink to="/profile">My profile</NavLink>
                 {(role === "TENANT" || role === "OWNER") && (
   <NavLink to="/maintenance">Maintenance</NavLink>
@@ -254,6 +256,16 @@ export default function App() {
 
       <main id="main-content" className="main-content" tabIndex={-1}>
         <Routes>
+          <Route
+  path="/notifications"
+  element={
+    session ? (
+      <Notifications key={session.user.id} />
+    ) : (
+      <Navigate to="/login" replace />
+    )
+  }
+/>
           <Route
             path="/"
             element={<BrowseRooms session={session} />}
