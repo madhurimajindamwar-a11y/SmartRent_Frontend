@@ -1,6 +1,41 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "../services/api";
+const hyderabadLocalities = [
+  "Abids",
+  "Alwal",
+  "Ameerpet",
+  "Attapur",
+  "Bachupally",
+  "Banjara Hills",
+  "Begumpet",
+  "Boduppal",
+  "Chandanagar",
+  "Dilsukhnagar",
+  "Gachibowli",
+  "Habsiguda",
+  "Hafeezpet",
+  "Himayatnagar",
+  "HITEC City",
+  "Jubilee Hills",
+  "Kachiguda",
+  "Kondapur",
+  "Kothapet",
+  "Kukatpally",
+  "LB Nagar",
+  "Madhapur",
+  "Madinaguda",
+  "Manikonda",
+  "Miyapur",
+  "Nallagandla",
+  "Nizampet",
+  "Sainikpuri",
+  "Secunderabad",
+  "Tarnaka",
+  "Tolichowki",
+  "Uppal",
+  "Vanastalipuram",
+];
 
 const emptyFilters = {
   locality: "",
@@ -330,16 +365,24 @@ export default function BrowseRooms() {
 
         <form className="search-panel" onSubmit={handleSearch}>
           <label htmlFor="search-locality">
-            Locality
-            <input
-              id="search-locality"
-              name="locality"
-              placeholder="e.g. Uppal"
-              value={filters.locality}
-              onChange={updateFilter}
-              maxLength={100}
-            />
-          </label>
+  Locality
+  <input
+    id="search-locality"
+    name="locality"
+    list="hyderabad-localities"
+    placeholder="Type an area, e.g. Uppal"
+    value={filters.locality}
+    onChange={updateFilter}
+    maxLength={100}
+    autoComplete="off"
+  />
+
+  <datalist id="hyderabad-localities">
+    {hyderabadLocalities.map((locality) => (
+      <option key={locality} value={locality} />
+    ))}
+  </datalist>
+</label>
 
           <label htmlFor="search-max-rent">
             Maximum rent / month
