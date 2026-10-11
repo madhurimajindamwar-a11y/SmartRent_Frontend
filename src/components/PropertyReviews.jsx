@@ -52,9 +52,16 @@ export default function PropertyReviews({ propertyId, session }) {
   const [reload, setReload] = useState(0);
 
   const savingRef = useRef(false);
-  const contextRef = useRef("");
-  const contextKey = `${propertyId}:${tenantId ?? "visitor"}`;
+ const contextKey = `${propertyId}:${tenantId ?? "visitor"}`;
+const contextRef = useRef(contextKey);
+
+useEffect(() => {
   contextRef.current = contextKey;
+
+  return () => {
+    contextRef.current = null;
+  };
+}, [contextKey]);
 
   useEffect(() => {
     const controller = new AbortController();

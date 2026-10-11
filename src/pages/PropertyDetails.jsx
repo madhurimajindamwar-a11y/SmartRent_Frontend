@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import api from "../services/api";
-import PropertyReviews from "../components/PropertyReviews";S
+import PropertyReviews from "../components/PropertyReviews";
 
 const currency = new Intl.NumberFormat("en-IN", {
   style: "currency",

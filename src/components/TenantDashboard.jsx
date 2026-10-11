@@ -29,8 +29,6 @@ function TenantPhoto({ propertyId, photoId, title, number }) {
     const controller = new AbortController();
     let objectUrl;
 
-    setUrl("");
-    setFailed(false);
 
     async function loadPhoto() {
       try {
@@ -38,6 +36,9 @@ function TenantPhoto({ propertyId, photoId, title, number }) {
           `/properties/${propertyId}/images/${photoId}/content`,
           { responseType: "blob", signal: controller.signal }
         );
+        if (controller.signal.aborted) return;
+
+setFailed(false);
 
         if (controller.signal.aborted) return;
 
