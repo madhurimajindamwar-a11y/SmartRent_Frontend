@@ -94,3 +94,13 @@ https://github.com/madhurimajindamwar-a11y/SmartRent_Backend
 - Tenant maintenance submission for an active rental.
 - Owner maintenance updates: Open → In Progress → Resolved.
 - Tenant visibility of maintenance status changes.
+
+## Tenant reviews and notifications
+
+- Tenants with qualifying rental records can publish and edit one review per property.
+- Property details display the average rating, review count, and latest reviews.
+- In-app notifications cover rental submissions, decisions, cancellations, and maintenance updates.
+- Notifications support unread counts, individual read actions, and marking all as read.
+- The notifications page refreshes automatically while visible.
+
+Manual live checks covered review publishing, editing, persistence, notification delivery, and read actions. Notification access checks returned 401 without authentication and 404 for a cross-account read update. These checks do not replace comprehensive automated or security testing.
