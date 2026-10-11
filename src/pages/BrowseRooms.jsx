@@ -14,6 +14,126 @@ const currency = new Intl.NumberFormat("en-IN", {
   maximumFractionDigits: 0,
 });
 
+function PropertyCover({ propertyId, title }) {
+  const [url, setUrl] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let objectUrl;
+
+    async function loadCover() {
+      setUrl("");
+      setLoading(true);
+      setFailed(false);
+
+      try {
+        const response = await api.get(
+          `/properties/${propertyId}/images`,
+          { signal: controller.signal }
+        );
+
+        if (!Array.isArray(response.data)) {
+          throw new Error("Unexpected photo response");
+        }
+
+        if (
+          controller.signal.aborted ||
+          response.data.length === 0
+        ) {
+          return;
+        }
+
+        const cover = response.data[0];
+
+        if (cover?.id == null) {
+          throw new Error("Missing photo ID");
+        }
+
+        const image = await api.get(
+          `/properties/${propertyId}/images/${cover.id}/content`,
+          {
+            responseType: "blob",
+            signal: controller.signal,
+          }
+        );
+
+        if (controller.signal.aborted) return;
+
+        objectUrl = URL.createObjectURL(image.data);
+        setUrl(objectUrl);
+      } catch {
+        if (!controller.signal.aborted) {
+          setFailed(true);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadCover();
+
+    return () => {
+      controller.abort();
+
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [propertyId]);
+
+  return (
+    <Link
+      to={`/properties/${propertyId}`}
+      aria-label={`View details for ${title}`}
+      style={{
+        display: "block",
+        marginBottom: "16px",
+        textDecoration: "none",
+      }}
+    >
+      {url && !failed ? (
+        <img
+          src={url}
+          alt={`${title} — cover photo`}
+          onError={() => setFailed(true)}
+          style={{
+            display: "block",
+            width: "100%",
+            height: "210px",
+            objectFit: "cover",
+            borderRadius: "12px",
+          }}
+        />
+      ) : (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: "210px",
+            padding: "16px",
+            boxSizing: "border-box",
+            borderRadius: "12px",
+            background: "#eef4f2",
+            color: "#475569",
+            textAlign: "center",
+          }}
+        >
+          {loading
+            ? "Loading photo..."
+            : failed
+              ? "Photo preview unavailable"
+              : "No photo uploaded yet"}
+        </div>
+      )}
+    </Link>
+  );
+}
+
 export default function BrowseRooms() {
   const [filters, setFilters] = useState({ ...emptyFilters });
   const [query, setQuery] = useState({ ...emptyFilters });
@@ -47,9 +167,7 @@ export default function BrowseRooms() {
           setProperties(response.data);
         }
       } catch (requestError) {
-        if (controller.signal.aborted) {
-          return;
-        }
+        if (controller.signal.aborted) return;
 
         if (requestError.response?.status === 400) {
           setError("Please check your search values.");
@@ -294,6 +412,11 @@ export default function BrowseRooms() {
           <div className="property-grid">
             {sortedProperties.map((property) => (
               <article className="property-card" key={property.id}>
+                <PropertyCover
+                  propertyId={property.id}
+                  title={property.title}
+                />
+
                 <div className="card-top">
                   <span className="room-type">
                     {roomTypeLabel(property.roomType)}

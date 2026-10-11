@@ -1,6 +1,140 @@
 import { useEffect, useState } from "react";
 import api from "../services/api";
 
+function AdminPhotos({ propertyId }) {
+  const [photos, setPhotos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const objectUrls = [];
+
+    async function loadPhotos() {
+      setLoading(true);
+      setError("");
+      setPhotos([]);
+
+      try {
+        const response = await api.get(
+          `/manage/properties/${propertyId}/images`,
+          { signal: controller.signal }
+        );
+
+        if (!Array.isArray(response.data)) {
+          throw new Error("Unexpected photo response");
+        }
+
+        const previews = await Promise.all(
+          response.data.map(async (photo) => {
+            try {
+              const image = await api.get(
+                `/manage/properties/${propertyId}/images/${photo.id}/content`,
+                {
+                  responseType: "blob",
+                  signal: controller.signal,
+                }
+              );
+
+              if (controller.signal.aborted) return null;
+
+              const url = URL.createObjectURL(image.data);
+              objectUrls.push(url);
+              return { id: photo.id, url };
+            } catch {
+              return { id: photo.id, url: null };
+            }
+          })
+        );
+
+        if (!controller.signal.aborted) {
+          setPhotos(previews.filter(Boolean));
+        }
+      } catch (requestError) {
+        if (controller.signal.aborted) return;
+
+        const status = requestError.response?.status;
+        setError(
+          status === 401
+            ? "Session expired. Sign in again to view photos."
+            : status === 403
+              ? "Admin access to these photos was denied."
+              : "Could not load photos. Use Refresh pending properties to retry."
+        );
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadPhotos();
+
+    return () => {
+      controller.abort();
+      objectUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [propertyId]);
+
+  return (
+    <section style={{ margin: "16px 0" }}>
+      <h4>Property photos</h4>
+
+      {loading && <p role="status">Loading photos…</p>}
+      {error && (
+        <p role="alert" style={{ color: "#b91c1c" }}>
+          {error}
+        </p>
+      )}
+
+      {!loading && !error && photos.length === 0 && (
+        <p>No photos uploaded.</p>
+      )}
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+          gap: "10px",
+        }}
+      >
+        {photos.map((photo, index) => (
+          <figure key={photo.id} style={{ margin: 0 }}>
+            {photo.url ? (
+              <a href={photo.url} target="_blank" rel="noopener noreferrer">
+                <img
+                  src={photo.url}
+                  alt={`Property photo ${index + 1}`}
+                  style={{
+                    width: "100%",
+                    height: "150px",
+                    objectFit: "cover",
+                    borderRadius: "8px",
+                    display: "block",
+                  }}
+                  onError={() =>
+                    setPhotos((current) =>
+                      current.map((item) =>
+                        item.id === photo.id ? { ...item, url: null } : item
+                      )
+                    )
+                  }
+                />
+              </a>
+            ) : (
+              <p>Photo preview unavailable.</p>
+            )}
+
+            <figcaption style={{ fontSize: "13px", marginTop: "4px" }}>
+              {index === 0 ? "Cover photo" : `Photo ${index + 1}`}
+            </figcaption>
+          </figure>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export default function AdminDashboard() {
   const [properties, setProperties] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -30,41 +164,30 @@ export default function AdminDashboard() {
           setProperties(response.data);
         }
       } catch (requestError) {
-        if (controller.signal.aborted) {
-          return;
-        }
+        if (controller.signal.aborted) return;
 
         const status = requestError.response?.status;
-
-        if (status === 401) {
-          setError("Session expired. Log out and log in again.");
-        } else if (status === 403) {
-          setError("Only an admin can access this dashboard.");
-        } else {
-          setError("Could not load pending properties.");
-        }
+        setError(
+          status === 401
+            ? "Session expired. Log out and log in again."
+            : status === 403
+              ? "Only an admin can access this dashboard."
+              : "Could not load pending properties."
+        );
       } finally {
-        if (!controller.signal.aborted) {
-          setLoading(false);
-        }
+        if (!controller.signal.aborted) setLoading(false);
       }
     }
 
     loadPendingProperties();
-
     return () => controller.abort();
   }, [reload]);
 
   async function handleDecision(property, status) {
-    if (busyId !== null) {
-      return;
-    }
+    if (busyId !== null) return;
 
     const action = status === "VERIFIED" ? "Verify" : "Reject";
-
-    if (!window.confirm(`${action} "${property.title}"?`)) {
-      return;
-    }
+    if (!window.confirm(`${action} "${property.title}"?`)) return;
 
     setBusyId(property.id);
     setError("");
@@ -81,7 +204,6 @@ export default function AdminDashboard() {
           status === "VERIFIED" ? "verified" : "rejected"
         } successfully.`
       );
-
       setReload((value) => value + 1);
     } catch (requestError) {
       const responseStatus = requestError.response?.status;
@@ -91,9 +213,7 @@ export default function AdminDashboard() {
       } else if (responseStatus === 403) {
         setError("Only an admin can verify properties.");
       } else if (responseStatus === 409) {
-        setError(
-          "The property's owner or rental status prevents this action."
-        );
+        setError("The property's owner or rental status prevents this action.");
       } else if (responseStatus === 404) {
         setError("Property not found. Refresh the list.");
       } else {
@@ -109,7 +229,7 @@ export default function AdminDashboard() {
   return (
     <section style={{ marginTop: "32px" }}>
       <h2>Admin dashboard</h2>
-      <p>Review properties awaiting verification.</p>
+      <p>Review property details and photos before verification.</p>
 
       <button
         type="button"
@@ -120,17 +240,11 @@ export default function AdminDashboard() {
       </button>
 
       {message && (
-        <p role="status" style={{ color: "#15803d" }}>
-          {message}
-        </p>
+        <p role="status" style={{ color: "#15803d" }}>{message}</p>
       )}
-
       {error && (
-        <p role="alert" style={{ color: "#b91c1c" }}>
-          {error}
-        </p>
+        <p role="alert" style={{ color: "#b91c1c" }}>{error}</p>
       )}
-
       {loading && <p role="status">Loading pending properties...</p>}
 
       {!loading && !error && properties.length === 0 && (
@@ -154,21 +268,20 @@ export default function AdminDashboard() {
                 borderRadius: "12px",
                 padding: "20px",
                 background: "#f8fafc",
+                minWidth: 0,
               }}
             >
               <h3>{property.title}</h3>
-
-              <p>
-                {property.locality} · {property.roomType}
-              </p>
-
-              <p>
-                ₹{Number(property.rent).toLocaleString("en-IN")} / month
-              </p>
-
+              <p>{property.locality} · {property.roomType}</p>
+              <p>₹{Number(property.rent).toLocaleString("en-IN")} / month</p>
               <p>{property.description}</p>
               <p>Owner ID: {property.ownerId ?? "Not assigned"}</p>
               <p>Status: {property.verificationStatus}</p>
+
+              <AdminPhotos
+                key={`${property.id}-${reload}`}
+                propertyId={property.id}
+              />
 
               {!property.ownerId && (
                 <p style={{ color: "#b45309" }}>
@@ -184,7 +297,6 @@ export default function AdminDashboard() {
                 >
                   Verify
                 </button>
-
                 <button
                   type="button"
                   disabled={busyId !== null}

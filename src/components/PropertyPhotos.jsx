@@ -123,11 +123,13 @@ export default function PropertyPhotos({ propertyId }) {
       setError("The photo is too large. Choose a file under 5 MB.");
     } else if (status === 409) {
       setError("This property may already have six photos. Refresh the list.");
-    } else if (status === 400) {
-      setError(
-        "Use a valid JPEG or PNG, up to 5 MB, 8000 pixels per side, " +
-          "and 20 megapixels in total."
-      );
+    }  else if (status === 400) {
+  const backendMessage = requestError.response?.data?.message;
+
+  setError(
+    backendMessage ||
+      "Upload rejected with status 400, but no explanation was returned."
+  );
     } else if (status === 404) {
       setError("The property or photo was not found. Refresh the list.");
     } else {

@@ -21,6 +21,213 @@ const gridStyle = {
   marginTop: "16px",
 };
 
+function TenantPhoto({ propertyId, photoId, title, number }) {
+  const [url, setUrl] = useState("");
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let objectUrl;
+
+    async function loadPhoto() {
+      setUrl("");
+      setFailed(false);
+
+      try {
+        const response = await api.get(
+          `/properties/${propertyId}/images/${photoId}/content`,
+          {
+            responseType: "blob",
+            signal: controller.signal,
+          }
+        );
+
+        if (controller.signal.aborted) return;
+
+        objectUrl = URL.createObjectURL(response.data);
+        setUrl(objectUrl);
+      } catch {
+        if (!controller.signal.aborted) {
+          setFailed(true);
+        }
+      }
+    }
+
+    loadPhoto();
+
+    return () => {
+      controller.abort();
+
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [propertyId, photoId]);
+
+  if (failed) {
+    return <p>Photo preview unavailable.</p>;
+  }
+
+  if (!url) {
+    return <p role="status">Loading photo...</p>;
+  }
+
+  return (
+    <figure style={{ margin: 0, minWidth: 0 }}>
+      <a href={url} target="_blank" rel="noopener noreferrer">
+        <img
+          src={url}
+          alt={`${title} — photo ${number}. Open full-size photo.`}
+          onError={() => setFailed(true)}
+          style={{
+            display: "block",
+            width: "100%",
+            height: "190px",
+            objectFit: "cover",
+            borderRadius: "10px",
+          }}
+        />
+      </a>
+
+      <figcaption style={{ fontSize: "13px", marginTop: "5px" }}>
+        {number === 1 ? "Cover photo" : `Photo ${number}`}
+      </figcaption>
+    </figure>
+  );
+}
+
+function TenantPropertyPhotos({ propertyId, title }) {
+  const [photos, setPhotos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [expanded, setExpanded] = useState(false);
+  const [retry, setRetry] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadPhotos() {
+      setLoading(true);
+      setError("");
+      setPhotos([]);
+      setExpanded(false);
+
+      if (propertyId == null) {
+        setError("Photos unavailable: missing property ID.");
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const response = await api.get(
+          `/properties/${propertyId}/images`,
+          { signal: controller.signal }
+        );
+
+        if (
+          !Array.isArray(response.data) ||
+          response.data.some((photo) => photo?.id == null)
+        ) {
+          throw new Error("Unexpected photo response");
+        }
+
+        if (!controller.signal.aborted) {
+          setPhotos(response.data);
+        }
+      } catch (requestError) {
+        if (controller.signal.aborted) return;
+
+        const status = requestError.response?.status;
+
+        setError(
+          status === 403 || status === 404
+            ? "Photos are not currently available for this listing."
+            : "Could not load property photos."
+        );
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadPhotos();
+
+    return () => controller.abort();
+  }, [propertyId, retry]);
+
+  return (
+    <div style={{ margin: "12px 0 16px" }}>
+      {loading && <p role="status">Loading photos...</p>}
+
+      {!loading && error && (
+        <div>
+          <p role="status">{error}</p>
+
+          <button
+            type="button"
+            onClick={() => setRetry((value) => value + 1)}
+          >
+            Retry photos
+          </button>
+        </div>
+      )}
+
+      {!loading && !error && photos.length === 0 && (
+        <p style={{ color: "#475569" }}>
+          No photos uploaded yet.
+        </p>
+      )}
+
+      {!loading && !error && photos.length > 0 && (
+        <>
+          <TenantPhoto
+            propertyId={propertyId}
+            photoId={photos[0].id}
+            title={title}
+            number={1}
+          />
+
+          {photos.length > 1 && (
+            <>
+              <button
+                type="button"
+                aria-expanded={expanded}
+                onClick={() => setExpanded((value) => !value)}
+                style={{ marginTop: "10px" }}
+              >
+                {expanded
+                  ? "Show cover only"
+                  : `View all ${photos.length} photos`}
+              </button>
+
+              {expanded && (
+                <div
+                  style={{
+                    display: "grid",
+                    gap: "12px",
+                    marginTop: "12px",
+                  }}
+                >
+                  {photos.slice(1).map((photo, index) => (
+                    <TenantPhoto
+                      key={photo.id}
+                      propertyId={propertyId}
+                      photoId={photo.id}
+                      title={title}
+                      number={index + 2}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function TenantDashboard() {
   const [tab, setTab] = useState("rooms");
   const [rooms, setRooms] = useState([]);
@@ -65,9 +272,7 @@ export default function TenantDashboard() {
           setRentals(responses[3].data);
         }
       } catch (requestError) {
-        if (controller.signal.aborted) {
-          return;
-        }
+        if (controller.signal.aborted) return;
 
         const status = requestError.response?.status;
 
@@ -135,9 +340,7 @@ export default function TenantDashboard() {
   }
 
   async function toggleFavorite(property) {
-    if (busy) {
-      return;
-    }
+    if (busy) return;
 
     setBusy(true);
     setError("");
@@ -155,6 +358,7 @@ export default function TenantDashboard() {
       setNotice(
         removing ? "Removed from favorites." : "Added to favorites."
       );
+
       setReload((value) => value + 1);
     } catch (requestError) {
       showActionError(
@@ -176,9 +380,7 @@ export default function TenantDashboard() {
   async function submitRequest(event) {
     event.preventDefault();
 
-    if (busy || !selectedRoom) {
-      return;
-    }
+    if (busy || !selectedRoom) return;
 
     setBusy(true);
     setError("");
@@ -260,7 +462,8 @@ export default function TenantDashboard() {
             }}
             style={{
               fontWeight: tab === value ? "bold" : "normal",
-              borderBottom: tab === value ? "3px solid #2458ed" : undefined,
+              borderBottom:
+                tab === value ? "3px solid #2458ed" : undefined,
             }}
           >
             {label}
@@ -288,7 +491,9 @@ export default function TenantDashboard() {
         </p>
       )}
 
-      {loading && <p role="status">Loading your dashboard...</p>}
+      {loading && (
+        <p role="status">Loading your dashboard...</p>
+      )}
 
       {!loading && !error && (
         <>
@@ -306,12 +511,16 @@ export default function TenantDashboard() {
             >
               <h3>Request: {selectedRoom.title}</h3>
 
-              <label htmlFor="rental-message">Message to the owner</label>
+              <label htmlFor="rental-message">
+                Message to the owner
+              </label>
 
               <textarea
                 id="rental-message"
                 value={requestMessage}
-                onChange={(event) => setRequestMessage(event.target.value)}
+                onChange={(event) =>
+                  setRequestMessage(event.target.value)
+                }
                 maxLength={1000}
                 rows={3}
                 disabled={busy}
@@ -357,6 +566,12 @@ export default function TenantDashboard() {
                 {displayedProperties.map((property) => (
                   <article key={property.id} style={cardStyle}>
                     <h3>{property.title}</h3>
+
+                    <TenantPropertyPhotos
+                      key={`${property.id}-${reload}`}
+                      propertyId={property.id}
+                      title={property.title}
+                    />
 
                     <p>
                       {property.locality} · {property.roomType}
@@ -413,7 +628,9 @@ export default function TenantDashboard() {
 
           {tab === "requests" && (
             <>
-              {requests.length === 0 && <p>No rental requests yet.</p>}
+              {requests.length === 0 && (
+                <p>No rental requests yet.</p>
+              )}
 
               <div style={gridStyle}>
                 {requests.map((request) => (
@@ -421,6 +638,7 @@ export default function TenantDashboard() {
                     <h3>{propertyTitle(request.propertyId)}</h3>
                     <p>Request #{request.id}</p>
                     <p>{request.message}</p>
+
                     <p>
                       Status: <strong>{request.status}</strong>
                     </p>
@@ -442,19 +660,24 @@ export default function TenantDashboard() {
 
           {tab === "rentals" && (
             <>
-              {rentals.length === 0 && <p>No rental records yet.</p>}
+              {rentals.length === 0 && (
+                <p>No rental records yet.</p>
+              )}
 
               <div style={gridStyle}>
                 {rentals.map((rental) => (
                   <article key={rental.id} style={cardStyle}>
                     <h3>{propertyTitle(rental.propertyId)}</h3>
                     <p>Rental #{rental.id}</p>
+
                     <p>
                       Agreed rent: {currency.format(rental.agreedRent)}
                       {" / month"}
                     </p>
+
                     <p>Start date: {rental.startDate}</p>
                     <p>End date: {rental.endDate || "Not set"}</p>
+
                     <p>
                       Status: <strong>{rental.status}</strong>
                     </p>

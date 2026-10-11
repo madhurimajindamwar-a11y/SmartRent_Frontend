@@ -8,10 +8,205 @@ const currency = new Intl.NumberFormat("en-IN", {
   maximumFractionDigits: 0,
 });
 
+function PropertyGallery({ propertyId, title }) {
+  const [photos, setPhotos] = useState([]);
+  const [selected, setSelected] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const objectUrls = [];
+
+    async function loadPhotos() {
+      setLoading(true);
+      setError("");
+      setPhotos([]);
+      setSelected(0);
+
+      try {
+        const response = await api.get(
+          `/properties/${propertyId}/images`,
+          { signal: controller.signal }
+        );
+
+        if (
+          !Array.isArray(response.data) ||
+          response.data.some((photo) => photo?.id == null)
+        ) {
+          throw new Error("Unexpected photo response");
+        }
+
+        const previews = await Promise.all(
+          response.data.map(async (photo) => {
+            try {
+              const image = await api.get(
+                `/properties/${propertyId}/images/${photo.id}/content`,
+                {
+                  responseType: "blob",
+                  signal: controller.signal,
+                }
+              );
+
+              if (controller.signal.aborted) return null;
+
+              const url = URL.createObjectURL(image.data);
+              objectUrls.push(url);
+
+              return { id: photo.id, url };
+            } catch {
+              return { id: photo.id, url: null };
+            }
+          })
+        );
+
+        if (!controller.signal.aborted) {
+          setPhotos(previews.filter(Boolean));
+        }
+      } catch {
+        if (!controller.signal.aborted) {
+          setError("Could not load property photos. Please retry.");
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadPhotos();
+
+    return () => {
+      controller.abort();
+      objectUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [propertyId, retry]);
+
+  function markFailed(photoId) {
+    setPhotos((current) =>
+      current.map((photo) =>
+        photo.id === photoId ? { ...photo, url: null } : photo
+      )
+    );
+  }
+
+  const currentPhoto = photos[selected];
+
+  return (
+    <section className="details-section" aria-label="Property photos">
+      <h2>Property photos</h2>
+
+      {loading && <p role="status">Loading photos...</p>}
+
+      {!loading && error && <p role="alert">{error}</p>}
+
+      {!loading && !error && photos.length === 0 && (
+        <p>The owner has not uploaded photos yet.</p>
+      )}
+
+      {!loading && !error && currentPhoto && (
+        <>
+          <figure style={{ margin: 0 }}>
+            {currentPhoto.url ? (
+              <a
+                href={currentPhoto.url}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <img
+                  src={currentPhoto.url}
+                  alt={`${title} — photo ${selected + 1}. Open full-size photo.`}
+                  onError={() => markFailed(currentPhoto.id)}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    height: "clamp(220px, 45vw, 440px)",
+                    objectFit: "contain",
+                    borderRadius: "12px",
+                    background: "#f1f5f9",
+                  }}
+                />
+              </a>
+            ) : (
+              <p role="status">This photo preview is unavailable.</p>
+            )}
+
+            <figcaption style={{ marginTop: "8px" }}>
+              Photo {selected + 1} of {photos.length}
+              {selected === 0 ? " · Cover photo" : ""}
+            </figcaption>
+          </figure>
+
+          {photos.length > 1 && (
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "10px",
+                marginTop: "12px",
+              }}
+            >
+              {photos.map((photo, index) => (
+                <button
+                  key={photo.id}
+                  type="button"
+                  aria-label={`Show photo ${index + 1}`}
+                  aria-pressed={selected === index}
+                  onClick={() => setSelected(index)}
+                  style={{
+                    padding: "4px",
+                    width: "92px",
+                    minHeight: "72px",
+                    borderRadius: "8px",
+                    border:
+                      selected === index
+                        ? "3px solid #2458ed"
+                        : "1px solid #cbd5e1",
+                    background: "#fff",
+                    cursor: "pointer",
+                  }}
+                >
+                  {photo.url ? (
+                    <img
+                      src={photo.url}
+                      alt=""
+                      onError={() => markFailed(photo.id)}
+                      style={{
+                        display: "block",
+                        width: "100%",
+                        height: "62px",
+                        objectFit: "cover",
+                        borderRadius: "4px",
+                      }}
+                    />
+                  ) : (
+                    <span>Photo {index + 1} unavailable</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {!loading && (error || photos.some((photo) => !photo.url)) && (
+        <button
+          type="button"
+          onClick={() => setRetry((value) => value + 1)}
+          style={{ marginTop: "12px" }}
+        >
+          Retry photos
+        </button>
+      )}
+    </section>
+  );
+}
+
 export default function PropertyDetails({ session }) {
   const { id } = useParams();
   const tenantId =
-    session?.user.role === "TENANT" ? session.user.id : null;
+    session?.user?.role === "TENANT" ? session.user.id : null;
 
   const [property, setProperty] = useState(null);
   const [favorite, setFavorite] = useState(false);
@@ -256,6 +451,12 @@ export default function PropertyDetails({ session }) {
 
           <div className="details-layout">
             <div className="details-main">
+              <PropertyGallery
+                key={`${property.id}-${reload}`}
+                propertyId={property.id}
+                title={property.title}
+              />
+
               <section className="details-section">
                 <h2>About this room</h2>
                 <p>
@@ -326,7 +527,8 @@ export default function PropertyDetails({ session }) {
               {session && !tenantId && (
                 <>
                   <p>
-                    You’re signed in as an {session.user.role.toLowerCase()}.
+                    You’re signed in as an{" "}
+                    {session.user?.role?.toLowerCase() || "user"}.
                     Rental requests are available to tenant accounts.
                   </p>
                   <Link className="button" to="/dashboard">
@@ -409,7 +611,9 @@ export default function PropertyDetails({ session }) {
                     </form>
                   )}
 
-                  <Link to="/dashboard">View saved rooms and requests →</Link>
+                  <Link to="/dashboard">
+                    View saved rooms and requests →
+                  </Link>
                 </div>
               )}
 

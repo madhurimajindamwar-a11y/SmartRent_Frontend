@@ -333,20 +333,22 @@ export default function OwnerDashboard() {
                 Wi-Fi: {property.wifi ? "Yes" : "No"}
                 {" · "}Food: {property.food ? "Yes" : "No"}
                 {" · "}AC: {property.ac ? "Yes" : "No"}
-              </p>
-              <PropertyPhotos property={property} />
+                      </p>
+
               <PropertyActions
-    property={property}
-    onChanged={() => setReload((value) => value + 1)}
-    />
-    <PropertyPhotos propertyId={property.id} />
-</article>
+                property={property}
+                onChanged={() => setReload((value) => value + 1)}
+              />
+
+              <PropertyPhotos propertyId={property.id} />
+            </article>
           ))}
         </div>
       )}
-    <OwnerRequests
-onRentalChanged={() => setReload((value) => value + 1)}
-/>
+
+      <OwnerRequests
+        onRentalChanged={() => setReload((value) => value + 1)}
+      />
     </section>
 );
 }
