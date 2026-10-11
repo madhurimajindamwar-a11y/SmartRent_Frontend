@@ -1,16 +1,84 @@
-# React + Vite
+﻿# SmartRent Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+SmartRent helps tenants discover rooms, save favorites, receive preference-based recommendations, and submit rental requests. Owners manage listings and requests, while admins review listings.
 
-Currently, two official plugins are available:
+## Live application
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+https://smart-rent-frontend.vercel.app/
 
-## React Compiler
+## Technology
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+React, Vite, React Router, and Axios.
 
-## Expanding the ESLint configuration
+## Implemented features
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- Tenant and owner registration.
+- Login, logout, session expiry, and role-specific dashboards.
+- Browse rooms and filter by locality, maximum rent, and room type.
+- Property details and multiple photo previews.
+- Add, view, and remove favorites.
+- Smart matching with match percentages and explanations.
+- Submit and cancel pending rental requests.
+- Owner acceptance and rejection of rental requests.
+- View active rentals and rental request history.
+- Owner listing creation, editing, availability controls, and deletion.
+- Owner photo upload and deletion.
+- Admin listing verification and rejection.
+- Loading, error, success, and empty states.
+
+## Local setup
+
+Install a Node.js version compatible with the project's Vite version.
+
+Run from this repository:
+
+    npm ci
+    npm run dev
+
+Open http://localhost:5173.
+
+The backend must run separately on port 8081. Vite forwards local /api requests to http://localhost:8081.
+
+## Production build
+
+    npm run build
+
+The generated output is in dist.
+
+## Deployment
+
+Hosted on Vercel:
+
+- Framework: Vite
+- Build command: npm run build
+- Output directory: dist
+- Repository root: ./
+
+vercel.json forwards /api requests to the Railway backend and supports direct navigation to React routes.
+
+The frontend uses /api as its API base URL. Database credentials and the JWT signing secret belong only on the backend.
+
+## Manual verification
+
+Verified on the deployed application:
+
+- Tenant, owner, and admin dashboard access.
+- Property photos and direct-page refresh.
+- Favorites addition and removal.
+- A 100% preference match for the demo room.
+- Rental request submission and owner acceptance.
+- Active rental creation and removal of rented listings from browsing.
+- Blocking new requests while a tenant has an active rental.
+- Listing titles in request and rental history.
+
+These checks are manual smoke tests, not a complete automated test suite.
+
+## Scope
+
+This version supports one active rental per listing and one active rental per tenant. Matching uses deterministic preference weights, not machine learning.
+
+Visits, payments, maintenance, reviews, maps, password reset, profile editing, and advanced admin management are not implemented.
+
+## Backend repository
+
+https://github.com/madhurimajindamwar-a11y/SmartRent_Backend
